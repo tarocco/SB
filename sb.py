@@ -4,7 +4,6 @@ import pathlib
 import io
 import shutil
 
-import kivy
 from kivy.app import App
 from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
@@ -14,10 +13,7 @@ from kivy.properties import AliasProperty, \
     ReferenceListProperty, \
     NumericProperty, \
     BoundedNumericProperty
-from kivy.uix.widget import Widget
-from kivy.clock import mainthread
 from kivy.graphics.transformation import Matrix
-from kivy.vector import Vector
 from kivy.graphics import ScissorPush, ScissorPop
 from PIL import Image as PILImageM
 from PIL.Image import Image as PILImage
@@ -26,6 +22,7 @@ from itertools import islice
 import pytess
 
 from argparse import ArgumentParser
+
 
 def get_image_paths(parent_path):
     suffixes = {'png', 'jpg', 'gif', 'webp'}
@@ -62,9 +59,9 @@ def prepare_thumbnails(image_paths, thumbnails_path):
             img.save(thumbnail_io, 'PNG')
             thumbnail_io.seek(0)
             # Caching handled by Kivy
-            #with open(thumbnail_path, 'wb') as thumbnail_file:
-            #    shutil.copyfileobj(thumbnail_io, thumbnail_file)
-            #thumbnail_io.seek(0)
+            with open(thumbnail_path, 'wb') as thumbnail_file:
+                shutil.copyfileobj(thumbnail_io, thumbnail_file)
+            thumbnail_io.seek(0)
 
         yield thumbnail_path, thumbnail_io, img
 
@@ -138,6 +135,7 @@ class SBView(FloatLayout):
     pivot_y = BoundedNumericProperty(0.5, min=0.0, max=1.0, bint=['height'])
     pivot = ReferenceListProperty(pivot_x, pivot_y)
 
+
 class SBScatter(ScatterLayout):
     def __init__(self, **kwargs):
         super(SBScatter, self).__init__(**kwargs)
@@ -158,23 +156,6 @@ class SBScatter(ScatterLayout):
         mtx = Matrix().scale(rescale, rescale, rescale)
         self.apply_transform(mtx, anchor=anchor)
 
-    def _get_scale(self):
-        p1 = Vector(*self.to_parent(0, 0))
-        p2 = Vector(*self.to_parent(1, 0))
-        scale = p1.distance(p2)
-
-        # XXX float calculation are not accurate, and then, scale can be
-        # throwed again even with only the position change. So to
-        # prevent anything wrong with scale, just avoid to dispatch it
-        # if the scale "visually" didn't change. #947
-        # Remove this ugly hack when we'll be Python 3 only.
-        if hasattr(self, '_scale_p'):
-            if str(scale) == str(self._scale_p):
-                return self._scale_p
-
-        self._scale_p = scale
-        return scale
-
     def on_touch_down(self, touch):
         if touch.is_mouse_scrolling:
             if touch.button == 'scrolldown':
@@ -188,7 +169,8 @@ class SBScatter(ScatterLayout):
         super().on_touch_down(touch)
 
     scroll_zoom_rate = NumericProperty(1.1)
-    scale = AliasProperty(_get_scale, _set_scale, bind=('x', 'y', 'transform'))
+    scale = AliasProperty(ScatterLayout._get_scale, _set_scale,
+                          bind=('x', 'y', 'transform'))
 
 
 def get_abs_path(path):
