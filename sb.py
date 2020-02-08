@@ -19,7 +19,10 @@ from PIL import Image as PILImageM
 from PIL.Image import Image as PILImage
 import numpy as np
 from itertools import islice
+
 import pytess
+from scipy.spatial import KDTree
+from scipy.special import softmax
 
 from argparse import ArgumentParser
 
@@ -212,6 +215,34 @@ def relax_points(points):
     return [np.apply_along_axis(np.mean, 0, np.array(v)) for v in polys]
 
 
+def k_relax_points(points, alpha, beta, k=3):
+    """
+    Relax points by alpha strength to objective beta distance
+    by k-nearest points
+    :param points: (list of 1d array-like) vectors to relax
+    :param alpha: (float) iteration strength
+    :param beta: (float) target point distance/spacing
+    :return: (list of 1d array-like) relaxed vectors
+    """
+    kdt = KDTree(points)
+    relaxed = []
+    for p in points:
+        q = kdt.query(p, k=k + 1)
+        distances, indices = q
+        data = zip(distances, indices)
+        next(data)  # Skip self
+        p2 = np.array(p)
+        for d, i in data:
+            if i not in range(len(kdt.data)):
+                continue
+            n = np.array(kdt.data[i]) - p2
+            n = n / (np.linalg.norm(n) + 0.0001)
+            s = (d - beta)
+            p2 = p2 + alpha * s * n
+        relaxed.append(p2)
+    return relaxed
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument('--images', type=str)
@@ -228,8 +259,11 @@ def main():
     analyses = list(map(Analysis.process_image, thumbnail_images))
     points = [(a.mean, a.contrast) for a in analyses]
 
-    #for _ in range(3):
-    #    points = relax_points(points)
+    for _ in range(4):
+        points = k_relax_points(points, 0.2, 0.07, 6)
+
+    for _ in range(32):
+        points = k_relax_points(points, 0.1, 0.05, 3)
 
     # Reset stream positions after generating analyses (PIL affects it)
     for thumb_io in thumbnail_ios:
