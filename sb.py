@@ -12,7 +12,7 @@ if __name__ == '__main__':
     from sb.images import prepare_thumbnails
     from sb.uix import SBView
 
-    MAX_IMAGES = 100
+    MAX_IMAGES = 2000
 
     class SBApp(App):
         def __init__(self):
@@ -29,7 +29,7 @@ if __name__ == '__main__':
             for kimg, img, c in zip(kimages, self.images, self.coordinates):
                 kimg.texture = img.texture
                 kimg.size_hint = (None, None)
-                kimg.size = tuple(0.2 * i for i in kimg.texture_size)
+                kimg.size = tuple(0.1 * i for i in kimg.texture_size)
                 view.add_widget(kimg)
 
             scatter.set_widget_pos_hints(scatter.get_widgets(), self.coordinates)
@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
         analyses = list(map(Analysis.process_image, thumbnail_images))
         points = process_batch_analysis_to_2d(analyses)
-        points = 0.7 * points + 0.5
+        points = 0.5 * points + 0.5
 
         # Reset stream positions after generating analyses (PIL affects it)
         for thumb_io in thumbnail_ios:

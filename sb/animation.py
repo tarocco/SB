@@ -5,18 +5,15 @@ from math import exp, log
 from .math import soft_minimum
 from multiprocessing import Process, Value, Array
 from ctypes import Structure, c_long, c_float
+from copy import copy, deepcopy
 import time
 
 
 class Vector2(Structure):
     _fields_ = [('x', c_float), ('y', c_float)]
 
-    def __getitem__(self, i):
-        if i == 0:
-            return self.x
-        if i == 1:
-            return self.y
-        return super(Vector2, self).__getitem__(i)
+    def __iter__(self):
+        yield from (self.x, self.y)
 
 
 def spin(cycles):
@@ -25,40 +22,8 @@ def spin(cycles):
         continue
 
 
-def batch_delaunay_relax_points(delaunay, alpha, beta, batch_size=None):
-    def find_neighbors(point_index, delaunay):
-        neighbor_divisions, neighbors = delaunay.vertex_neighbor_vertices
-        a = neighbor_divisions[point_index]
-        b = neighbor_divisions[point_index + 1]
-        return neighbors[a:b]
-
-    indices = range(len(delaunay.points))
-
-    if batch_size:
-        groups = grouper(indices, batch_size)
-    else:
-        groups = [indices]
-
-    for batch_indices in groups:
-        batch_points_relaxed = np.empty(
-            (len(batch_indices), delaunay.points.shape[1]))
-        for i, idx in enumerate(batch_indices):
-            p = delaunay.points[idx]
-            neighbors = delaunay.points[find_neighbors(idx, delaunay)]
-            delta = np.zeros_like(p)
-            for neighbor in neighbors:
-                n = neighbor - p
-                n_norm = np.linalg.norm(n)
-                n = n / (n_norm + 0.0001)
-                s = n_norm - beta
-                s = soft_minimum(0, s) + log(2)
-                delta = delta + alpha * s * n
-            batch_points_relaxed[i] = p + delta
-        yield batch_indices, batch_points_relaxed
-
-
 def delaunay_relax_points(
-        indices, points, neighbor_divs, neighbors,
+        indices, points, points_out, neighbor_divs, neighbors,
         alpha, beta):
 
     def get_neighbors(point_index):
@@ -66,22 +31,20 @@ def delaunay_relax_points(
         b = neighbor_divs[point_index + 1]
         return neighbors[a:b]
 
-    points_out = []
-
     for idx in indices:
         p = np.frombuffer(points[idx]).view('<f4')
-        neighbors = [points[i] for i in get_neighbors(idx)]
+        neighbor_indices = get_neighbors(idx)
+        p_neighbors = [points[i] for i in neighbor_indices]
         delta = np.zeros_like(p)
-        for neighbor in neighbors:
+        for neighbor in p_neighbors:
             n = np.frombuffer(neighbor).view('<f4') - p
             n_norm = np.linalg.norm(n)
-            n = n / (n_norm + 0.0001)
             s = n_norm - beta
-            s = soft_minimum(0, s) + log(2)
+            #s = soft_minimum(0, s) + log(2)
+            s = min(0, s)
+            n = n / (n_norm + 0.0001)
             delta = delta + alpha * s * n
-        points_out.append(p + delta)
-    return points_out
-
+        points_out[idx] = tuple(p + delta)
 
 def delaunay_loop(
         n_relax_procs,
@@ -115,12 +78,12 @@ def delaunay_loop(
 
                 with points_write_var.get_lock():
                     points_write_var.value = 1
-                    # Calculate Delaunay
+                    # Get np view from points array
                     array = np.frombuffer(
                         points.get_obj(),
                         dtype=Vector2,
-                        count=n_points.value)
-                    array = array.view('<f4').reshape(-1, 2)
+                        count=n_points.value).view('<f4').reshape(-1, 2)
+                    # Calculate Delaunay
                     delaunay = Delaunay(array)
                     # Copy neighbor data into lists
                     nds, ns = delaunay.vertex_neighbor_vertices
@@ -158,12 +121,12 @@ def relax_points_loop(
                 spin(1000)
                 continue
         points_indices = range(offset, n_points.value, stride)
-        relaxed = delaunay_relax_points(
-            points_indices, points, neighbor_divs, neighbors,
-            0.1, 0.08)
-        with points_out.get_lock():
-            for idx, p in zip(points_indices, relaxed):
-                points_out[idx] = tuple(p)
+        delaunay_relax_points(
+            points_indices, points, points_out, neighbor_divs, neighbors,
+            0.8, 0.02)
+        #with points_out.get_lock():
+        #    for idx, p in zip(points_indices, relaxed):
+        #        points_out[idx] = tuple(p)
         with relax_completed_var.get_lock():
             relax_completed_var.value = relax_completed_var.value - 1
 
@@ -231,16 +194,12 @@ class PointRelaxer():
                         self.points_out[idx] = tuple(p)
                     self.n_points.value = n_points
                     return
-                spin(1000)
-                continue
+            spin(1000)
+            continue
 
     def get_points(self):
-        while True:
-            with self.relax_completed_var.get_lock():
-                if self.relax_completed_var.value == 0:
-                    return [self.points[i] for i in range(self.n_points.value)]
-                spin(1000)
-                continue
+        with self.points.get_lock():
+            return [tuple(self.points[i]) for i in range(self.n_points.value)]
 
     def start_all(self):
         self.delaunay_process.start()

@@ -1,3 +1,4 @@
+from iteration_utilities._iteration_utilities import grouper
 from kivy.app import App
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.scatterlayout import ScatterLayout
@@ -76,6 +77,8 @@ class SBScatter(ScatterLayout):
         self._target_widget_pos_hints = None
         self._prior_widget_pos_hints = None
         self._point_relaxer = PointRelaxer()
+        self._widget_update_batch_size = 500
+        self._update_widgets_iter = None
 
     def set_point_relaxer(self, point_relaxer):
         self._point_relaxer = point_relaxer
@@ -105,21 +108,35 @@ class SBScatter(ScatterLayout):
         if self._prior_widget_pos_hints is None:
             self._prior_widget_pos_hints = self._target_widget_pos_hints.copy()
 
-    def _update_widgets(self, dt):
+    def _update_widgets_coro(self, dt):
         self._validate_widget_pos_hint_cache()
-        self._target_widget_pos_hints = self._point_relaxer.get_points()
+        points = self._point_relaxer.get_points()
+        self._target_widget_pos_hints = points
         a = self._prior_widget_pos_hints
         b = self._target_widget_pos_hints
+        self._prior_widget_pos_hints = a + (b - a) * min(8 * dt, 1)
+        widgets = self.get_widgets()
+        groups = grouper(
+            zip(widgets, self._prior_widget_pos_hints),
+            self._widget_update_batch_size
+        )
+        for g in groups:
+            ws, hs = zip(*g)
+            self.set_widget_pos_hints(ws, hs)
+            yield
+
+    def _update_widgets(self, dt):
+        if not self._update_widgets_iter:
+            self._update_widgets_iter = self._update_widgets_coro(dt)
         try:
-            self._prior_widget_pos_hints = a + (b - a) * 4 * dt
-            widgets = self.get_widgets()
-            self.set_widget_pos_hints(widgets, self._prior_widget_pos_hints)
-        except:
-            pass
+            next(self._update_widgets_iter)
+        except StopIteration:
+            self._update_widgets_iter = None
+            self._update_widgets(dt)
 
     def on_app_start(self, src):
-        Clock.schedule_interval(self._update_widgets, 1/60)
-        self._point_relaxer.init_processes(1000)
+        Clock.schedule_interval(self._update_widgets, 1/120)
+        self._point_relaxer.init_processes(4000)
         self._point_relaxer.start_all()
         self._validate_widget_pos_hint_cache()
         self._point_relaxer.set_points(self._target_widget_pos_hints)
