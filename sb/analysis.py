@@ -33,17 +33,22 @@ class Analysis:
         flat = array.flatten()
         mean = np.sum(flat) / flat.size
         contrast = np.sum(np.abs(flat - mean)) / flat.size
-        # Calculate alpha and beta from top 2 colors
-        colors, _ = peak_find_3d(array, 7, 1.0)
+
+        # Calculate dominant colors
+        '''
+        colors, _ = peak_find_3d(array, 7, 2.0)
         n_colors = 3
         if colors.shape[0] < n_colors:
             fill = np.repeat([colors[-1]], n_colors - colors.shape[0], axis=0)
             colors = np.concatenate((colors, fill), 0)
+        '''
+        colors = None
 
         return Analysis(mean, contrast, colors=colors)
 
     def get_data(self):
-        return [self.mean, self.contrast, *self.colors[:3].flatten()]
+        #return [self.mean, self.contrast, *self.colors[:3].flatten()]
+        return [self.mean, self.contrast]
 
     def __repr__(self):
         return f'<Analysis mean = {self.mean}, contrast = {self.contrast}>'
@@ -52,5 +57,5 @@ class Analysis:
 def process_batch_analysis_to_2d(analyses):
     data = np.array([a.get_data() for a in analyses])
     # D reduction
-    pca = KernelPCA(n_components=2, kernel='linear')
+    pca = KernelPCA(n_components=2)
     return pca.fit_transform(data)

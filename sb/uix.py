@@ -12,11 +12,13 @@ from kivy.clock import Clock
 import numpy as np
 
 from sb.animation import PointRelaxer
+from sb.sbcanvas import SBCanvas
+
 
 class SBView(FloatLayout):
     def __init__(self, **kwargs):
         super(SBView, self).__init__(**kwargs)
-        self.scatter = SBScatter(id='scatter')
+        self.scatter = SBScatter()
         self.scatter.size_hint = (None, None)
         super().add_widget(self.scatter)
         self.bind(width=self.width_changed)
@@ -64,7 +66,7 @@ class SBView(FloatLayout):
 class SBScatter(ScatterLayout):
     def __init__(self, **kwargs):
         super(SBScatter, self).__init__(**kwargs)
-        inner_content = FloatLayout()
+        inner_content = SBCanvas()
         inner_content.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
         inner_content.size_hint = (0.5, 0.5)
         super().add_widget(inner_content)
@@ -74,85 +76,74 @@ class SBScatter(ScatterLayout):
         self.running_app = app
         app.bind(on_start=self.on_app_start)
         app.bind(on_stop=self.on_app_stop)
-        self._target_widget_pos_hints = None
-        self._prior_widget_pos_hints = None
+        self._target_anchors = None
+        self._prior_anchors = None
         self._point_relaxer = PointRelaxer()
-        self._widget_update_batch_size = 500
         self._update_widgets_iter = None
 
     def set_point_relaxer(self, point_relaxer):
         self._point_relaxer = point_relaxer
 
-    def get_widgets(self):
-        return self._inner_content.children
+    def get_root_transforms(self):
+        return self._inner_content.get_root_transforms()
 
-    def get_widget_pos_hints(self):
-        widgets = self._inner_content.children
-        return np.array([(w.pos_hint.get('x') or 0, w.pos_hint.get('y') or 0)
-                         for w in widgets])
+    def add_root_transform(self, xform):
+        return self._inner_content.add_root_transform(xform)
 
-    def set_widget_pos_hints(self, widgets, pos_hints):
-        for w, h in zip(widgets, pos_hints):
-            w.pos_hint = {'x': float(h[0]), 'y': float(h[1])}
+    def get_all_anchors(self):
+        xforms = self._inner_content._root_object.transform.children
+        anchors = [(t.x_anchor, t.y_anchor) for t in xforms]
+        return np.array(anchors)
 
-    def set_cached_widget_pos_hints(self, indices, pos_hints):
-        if self._target_widget_pos_hints is None:
-            self._target_widget_pos_hints = self.get_widget_pos_hints()
-            self._point_relaxer.set_points(self._target_widget_pos_hints)
-        self._target_widget_pos_hints[indices, ...] = pos_hints[:, ...]
+    def set_transform_anchors(self, xforms, anchors):
+        for t, a in zip(xforms, anchors):
+            t.x_anchor, t.y_anchor = a
 
-    def _validate_widget_pos_hint_cache(self):
-        if self._target_widget_pos_hints is None:
-            self._target_widget_pos_hints = self.get_widget_pos_hints()
-            self._point_relaxer.set_points(self._target_widget_pos_hints)
-        if self._prior_widget_pos_hints is None:
-            self._prior_widget_pos_hints = self._target_widget_pos_hints.copy()
+    def set_target_anchors(self, anchors):
+        anchors = np.array(anchors)
+        self._target_anchors = anchors
+        self._prior_anchors = anchors.copy()
+        self._point_relaxer.set_points(anchors)
 
-    def _update_widgets_coro(self, dt):
-        self._validate_widget_pos_hint_cache()
+    def _validate_cached_anchors(self):
+        if self._target_anchors is None:
+            anchors = self.get_all_anchors()
+            self.set_target_anchors(anchors)
+        elif self._prior_anchors is None:
+            self._prior_anchors = self._target_anchors.copy()
+
+    def update(self, dt):
+        self._validate_cached_anchors()
         points = self._point_relaxer.get_points()
-        self._target_widget_pos_hints = points
-        a = self._prior_widget_pos_hints
-        b = self._target_widget_pos_hints
-        self._prior_widget_pos_hints = a + (b - a) * min(8 * dt, 1)
-        widgets = self.get_widgets()
-        groups = grouper(
-            zip(widgets, self._prior_widget_pos_hints),
-            self._widget_update_batch_size
-        )
-        for g in groups:
-            ws, hs = zip(*g)
-            self.set_widget_pos_hints(ws, hs)
-            yield
+        self._target_anchors = points
+        a = self._prior_anchors
+        b = self._target_anchors
+        self._prior_anchors = a + (b - a) * min(8 * dt, 1)
 
-    def _update_widgets(self, dt):
-        if not self._update_widgets_iter:
-            self._update_widgets_iter = self._update_widgets_coro(dt)
-        try:
-            next(self._update_widgets_iter)
-        except StopIteration:
-            self._update_widgets_iter = None
-            self._update_widgets(dt)
+        xforms = self.get_root_transforms()
+        anchors = self._prior_anchors
+        self.set_transform_anchors(xforms, anchors)
+        self._inner_content.update(dt)
 
     def on_app_start(self, src):
-        Clock.schedule_interval(self._update_widgets, 1/120)
-        self._point_relaxer.init_processes(4000)
+        Clock.schedule_interval(self.update, 1/60)
+        self._point_relaxer.init_processes(8000)
         self._point_relaxer.start_all()
-        self._validate_widget_pos_hint_cache()
-        self._point_relaxer.set_points(self._target_widget_pos_hints)
+        self._validate_cached_anchors()
+        self._point_relaxer.set_points(self._target_anchors)
 
     def on_app_stop(self, src):
         self._point_relaxer.stop_all()
 
     def add_widget(self, widget, index=0, canvas=None):
         self._inner_content.add_widget(widget, index, canvas)
-        self._target_widget_pos_hints = None
-        self._prior_widget_pos_hints = None
+        self._target_anchors = None
+        self._prior_anchors = None
 
     def remove_widget(self, widget, index=0, canvas=None):
         self._inner_content.remove(widget)
-        self._target_widget_pos_hints = None
-        self._prior_widget_pos_hints = None
+        self._target_anchors = None
+        self._prior_anchors = None
 
     def _set_scale(self, scale, anchor=(0.5, 0.5)):
         rescale = scale * 1.0 / self.scale

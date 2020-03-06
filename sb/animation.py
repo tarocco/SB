@@ -40,8 +40,8 @@ def delaunay_relax_points(
             n = np.frombuffer(neighbor).view('<f4') - p
             n_norm = np.linalg.norm(n)
             s = n_norm - beta
-            #s = soft_minimum(0, s) + log(2)
-            s = min(0, s)
+            s = soft_minimum(0, s) + log(2)
+            #s = min(0, s)
             n = n / (n_norm + 0.0001)
             delta = delta + alpha * s * n
         points_out[idx] = tuple(p + delta)
@@ -74,7 +74,7 @@ def delaunay_loop(
                         points[idx] = points_out[idx]
 
                 # Pause...
-                spin(1000)
+                spin(200)
 
                 with points_write_var.get_lock():
                     points_write_var.value = 1
@@ -118,12 +118,12 @@ def relax_points_loop(
             if relax_var.value > 0:
                 relax_var.value = relax_var.value - 1
             else:
-                spin(1000)
+                spin(200)
                 continue
         points_indices = range(offset, n_points.value, stride)
         delaunay_relax_points(
             points_indices, points, points_out, neighbor_divs, neighbors,
-            0.8, 0.02)
+            0.4, 0.04)
         #with points_out.get_lock():
         #    for idx, p in zip(points_indices, relaxed):
         #        points_out[idx] = tuple(p)
@@ -133,7 +133,7 @@ def relax_points_loop(
 
 class PointRelaxer():
     def __init__(self):
-        self.n_relaxation_workers = 1
+        self.n_relaxation_workers = 4
         # self.points_array = None
         # self.work_array = None
         self.cancellation = Value('i', 0, lock=True)
