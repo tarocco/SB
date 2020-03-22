@@ -1,11 +1,9 @@
 import numpy as np
-from iteration_utilities import grouper
 from scipy.spatial import Delaunay
 from math import exp, log
 from .math import soft_minimum
 from multiprocessing import Process, Value, Array
 from ctypes import Structure, c_long, c_float
-from copy import copy, deepcopy
 import time
 
 
@@ -123,7 +121,7 @@ def relax_points_loop(
         points_indices = range(offset, n_points.value, stride)
         delaunay_relax_points(
             points_indices, points, points_out, neighbor_divs, neighbors,
-            0.4, 0.04)
+            0.1, 0.04)
         #with points_out.get_lock():
         #    for idx, p in zip(points_indices, relaxed):
         #        points_out[idx] = tuple(p)

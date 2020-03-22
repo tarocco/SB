@@ -55,3 +55,7 @@ def process_batch_analysis_to_2d(analyses):
     # D reduction
     pca = KernelPCA(n_components=2)
     return pca.fit_transform(data)
+
+
+def process_nd_to_1d(array):
+    return KernelPCA(n_components=1).fit_transform(array)[:,0]

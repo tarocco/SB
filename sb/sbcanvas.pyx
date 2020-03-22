@@ -1,46 +1,9 @@
 from kivy.uix.widget import Widget
-from kivy.graphics import \
-    Color, Rectangle
-
-from sb.component import Component
-from sb.sbobject import SBObject
-
-from sb.recttransform import get_model_hierarchy, transform_model_calc
 import numpy as np
 
-class Drawable(Component):
-    def _add_to_canvas(self, canvas):
-        pass
-
-    def _remove_from_canvas(self, canvas):
-        pass
-
-
-class Image(Drawable):
-    def __init__(self, _object, *args, **kwargs):
-        super(Image, self).__init__(_object)
-        self.texture = kwargs.get('texture', None)
-        self.rectangle = Rectangle()
-        self._active_canvases = set()
-
-    def _add_to_canvas(self, canvas):
-        if not self._is_active_canvas(canvas):
-            canvas.add(self.rectangle)
-            self._active_canvases.add(canvas)
-
-    def _remove_from_canvas(self, canvas):
-        if self._is_active_canvas(canvas):
-            canvas.remove(self.rectangle)
-            self._active_canvases.remove(canvas)
-
-    def _is_active_canvas(self, canvas):
-        return canvas in self._active_canvases
-
-    def update(self, dt):
-        self.rectangle.texture = self.texture
-        self.rectangle.pos = (self.transform.x, self.transform.y)
-        size = (self.transform.width, self.transform.height)
-        self.rectangle.size = size
+from sb.sbobject import SBObject
+from sb.drawable import Drawable
+from sb.recttransform import transform_model_calc
 
 
 class SBCanvas(Widget):
@@ -54,6 +17,10 @@ class SBCanvas(Widget):
 
     def add_root_transform(self, xform):
         xform.parent = self._root_transform
+
+    def find_components(self, component_type):
+        for xf in self._root_transform.descendants:
+            yield from xf.get_object().get_components(component_type)
 
     def update(self, dt):
         self._root_transform.width = self.width

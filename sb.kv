@@ -6,7 +6,51 @@
 
 <SBView>:
 
-BoxLayout:
+<SelectDirectoryBtn>:
+    text: 'select directory'
+
+<CenterViewBtn>:
+    text: 'center view'
+
+<Export2DBtn>:
+    text: 'export 2d'
+
+<Export1DBtn>:
+    text: 'export 1d'
+
+
+FloatLayout:
     SBView:
         size_hint: 1, 1
-        id: scatter_view
+        id: main_view
+    AnchorLayout:
+        anchor_x: 'center'
+        anchor_y: 'top'
+        BoxLayout:
+            size_hint: (1.0, None)
+            height: 32
+            spacing: 20
+            Widget:
+            SelectDirectoryBtn:
+                size_hint: (None, 1.0)
+                width: 120
+            Widget:
+    AnchorLayout:
+        anchor_x: 'center'
+        anchor_y: 'bottom'
+        BoxLayout:
+            size_hint: (1.0, None)
+            height: 32
+            spacing: 20
+            Widget:
+            Export2DBtn:
+                size_hint: (None, 1.0)
+                width: 120
+            CenterViewBtn:
+                size_hint: (None, 1.0)
+                width: 120
+            Export1DBtn:
+                size_hint: (None, 1.0)
+                width: 120
+            Widget:
+
