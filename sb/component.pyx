@@ -1,4 +1,4 @@
-class Component:
+cdef class Component:
     def __init__(self, _object):
         self._object = _object
         self._transform = _object.transform

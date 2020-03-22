@@ -1,66 +1,13 @@
-from iteration_utilities._iteration_utilities import grouper
 from kivy.app import App
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.scatterlayout import ScatterLayout
-from kivy.properties import AliasProperty, \
-    ReferenceListProperty, \
-    NumericProperty, \
-    BoundedNumericProperty
+from kivy.properties import AliasProperty, NumericProperty
 from kivy.graphics.transformation import Matrix
-from kivy.graphics import ScissorPush, ScissorPop
 from kivy.clock import Clock
 import numpy as np
 
 from sb.animation import PointRelaxer
 from sb.sbcanvas import SBCanvas
-
-
-class SBView(FloatLayout):
-    def __init__(self, **kwargs):
-        super(SBView, self).__init__(**kwargs)
-        self.scatter = SBScatter()
-        self.scatter.size_hint = (None, None)
-        super().add_widget(self.scatter)
-        self.bind(width=self.width_changed)
-        self.bind(height=self.height_changed)
-        self._prior_width = None
-        self._prior_height = None
-
-        # Set and forget
-        with self.canvas.after:
-            ScissorPop()
-
-    def _update_clipping_mask(self):
-        self.canvas.before.clear()
-        with self.canvas.before:
-            x, y = self.to_window(*self.pos)
-            width, height = self.size
-            ScissorPush(x=int(round(x)), y=int(round(y)),
-                        width=int(round(width)), height=int(round(height)))
-
-    def width_changed(self, src, value):
-        self._update_clipping_mask()
-        if self._prior_width:
-            difference = value - self._prior_width
-            self.scatter.x += difference * self.pivot_x
-        self._prior_width = value
-
-    def height_changed(self, src, value):
-        self._update_clipping_mask()
-        if self._prior_height:
-            difference = value - self._prior_height
-            self.scatter.y += difference * self.pivot_y
-        self._prior_height = value
-
-    def add_widget(self, widget, index=0, canvas=None):
-        self.scatter.add_widget(widget, index, canvas)
-
-    def remove_widget(self, widget, index=0, canvas=None):
-        self.scatter.remove(widget)
-
-    pivot_x = BoundedNumericProperty(0.5, min=0.0, max=1.0, bind=['width'])
-    pivot_y = BoundedNumericProperty(0.5, min=0.0, max=1.0, bint=['height'])
-    pivot = ReferenceListProperty(pivot_x, pivot_y)
+import time
 
 
 class SBScatter(ScatterLayout):
@@ -80,6 +27,13 @@ class SBScatter(ScatterLayout):
         self._prior_anchors = None
         self._point_relaxer = PointRelaxer()
         self._update_widgets_iter = None
+
+        # Debugging
+        self._update_time_accumulator = 0
+        self._update_anchors_accumulator = 0
+        self._update_transforms_accumulator = 0
+        self._update_inner_content_accumulator = 0
+        self._update_number_accumulator = 0
 
     def set_point_relaxer(self, point_relaxer):
         self._point_relaxer = point_relaxer
@@ -113,20 +67,55 @@ class SBScatter(ScatterLayout):
             self._prior_anchors = self._target_anchors.copy()
 
     def update(self, dt):
+        begin_t = time.process_time()
+
         self._validate_cached_anchors()
         points = self._point_relaxer.get_points()
         self._target_anchors = points
         a = self._prior_anchors
         b = self._target_anchors
-        self._prior_anchors = a + (b - a) * min(8 * dt, 1)
+        self._prior_anchors = a + (b - a) * min(2 * dt, 1)
 
+        self._update_anchors_accumulator += time.process_time() - begin_t
+
+        xform_t = time.process_time()
         xforms = self.get_root_transforms()
         anchors = self._prior_anchors
         self.set_transform_anchors(xforms, anchors)
+        self._update_transforms_accumulator += time.process_time() - xform_t
+
+        innter_content_t = time.process_time()
         self._inner_content.update(dt)
+        self._update_inner_content_accumulator += time.process_time() - innter_content_t
+
+        self._update_time_accumulator += time.process_time() - begin_t
+        self._update_number_accumulator += 1
+
+    def debug_info_update(self, dt):
+        if self._update_number_accumulator > 0:
+            average_update_time = self._update_time_accumulator / \
+                                  self._update_number_accumulator
+            average_anchor_time = self._update_anchors_accumulator / \
+                                  self._update_number_accumulator
+            average_xform_time = self._update_transforms_accumulator / \
+                                 self._update_number_accumulator
+            average_inner_content_time = \
+                self._update_inner_content_accumulator / \
+                self._update_number_accumulator
+            print(f'Average update times (seconds):')
+            print(f'{"anchors":<20s} {average_anchor_time:<0.6f}')
+            print(f'{"transforms":<20s} {average_xform_time:<0.6f}')
+            print(f'{"inner content":<20s} {average_inner_content_time:<0.6f}')
+            print(f'{"all":<20s} {average_update_time:<0.6f}')
+            self._update_anchors_accumulator = 0
+            self._update_transforms_accumulator = 0
+            self._update_inner_content_accumulator = 0
+            self._update_time_accumulator = 0
+            self._update_number_accumulator = 0
 
     def on_app_start(self, src):
         Clock.schedule_interval(self.update, 1/60)
+        Clock.schedule_interval(self.debug_info_update, 1)
         self._point_relaxer.init_processes(8000)
         self._point_relaxer.start_all()
         self._validate_cached_anchors()

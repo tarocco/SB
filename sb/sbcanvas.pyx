@@ -1,14 +1,12 @@
 from kivy.uix.widget import Widget
-from sb.recttransform import RectTransform
 from kivy.graphics import \
     Color, Rectangle
 
 from sb.component import Component
 from sb.sbobject import SBObject
-from sb.util import walk_transforms
 
-from kivy.uix.floatlayout import FloatLayout
-
+from sb.recttransform import get_model_hierarchy, transform_model_calc
+import numpy as np
 
 class Drawable(Component):
     def _add_to_canvas(self, canvas):
@@ -39,12 +37,10 @@ class Image(Drawable):
         return canvas in self._active_canvases
 
     def update(self, dt):
-        if self.rectangle.texture != self.texture:
-            self.rectangle.texture = self.texture
+        self.rectangle.texture = self.texture
         self.rectangle.pos = (self.transform.x, self.transform.y)
         size = (self.transform.width, self.transform.height)
-        if self.rectangle.size != size:
-            self.rectangle.size = size
+        self.rectangle.size = size
 
 
 class SBCanvas(Widget):
@@ -62,10 +58,14 @@ class SBCanvas(Widget):
     def update(self, dt):
         self._root_transform.width = self.width
         self._root_transform.height = self.height
-        for t in walk_transforms(self._root_transform):
+
+        transforms = self._root_transform.descendants
+        lut = self._root_transform.hierarchy
+        data = np.empty((len(transforms), 2), dtype='float32')
+        transform_model_calc(transforms, lut)
+        for t in self._root_transform.descendants:
             _object = t.get_object()
             _object.update_components(dt)
             drawables = _object.get_components(Drawable)
             for drawable in drawables:
                 drawable._add_to_canvas(self.canvas)
-

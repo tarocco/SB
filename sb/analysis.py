@@ -35,20 +35,16 @@ class Analysis:
         contrast = np.sum(np.abs(flat - mean)) / flat.size
 
         # Calculate dominant colors
-        '''
         colors, _ = peak_find_3d(array, 7, 2.0)
         n_colors = 3
         if colors.shape[0] < n_colors:
             fill = np.repeat([colors[-1]], n_colors - colors.shape[0], axis=0)
             colors = np.concatenate((colors, fill), 0)
-        '''
-        colors = None
 
         return Analysis(mean, contrast, colors=colors)
 
     def get_data(self):
-        #return [self.mean, self.contrast, *self.colors[:3].flatten()]
-        return [self.mean, self.contrast]
+        return [self.mean, self.contrast, *self.colors[:3].flatten()]
 
     def __repr__(self):
         return f'<Analysis mean = {self.mean}, contrast = {self.contrast}>'

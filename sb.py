@@ -15,7 +15,7 @@ if __name__ == '__main__':
     from sb.analysis import Analysis, process_batch_analysis_to_2d
     from sb.files import get_image_paths
     from sb.images import prepare_thumbnails
-    from sb.uix import SBView
+    from sb.sbview import SBView
     from sb.sbobject import SBObject
     from sb.sbcanvas import Image as SBImage
 
@@ -78,6 +78,5 @@ if __name__ == '__main__':
         app.coordinates = points
         app.run()
 
-if __name__ == '__main__':
-    #multiprocessing.freeze_support()
+    multiprocessing.freeze_support()
     main()

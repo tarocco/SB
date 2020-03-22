@@ -183,3 +183,8 @@ dmypy.json
 
 # Cached thumbnails
 /thumbnail-images
+
+# Cython (TODO)
+sb/*.html
+sb/*.pyd
+sb/*.c
