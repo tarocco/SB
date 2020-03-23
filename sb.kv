@@ -19,6 +19,23 @@
     text: 'export 1d'
 
 
+<LoadDirectoryDialog>:
+    id: dialog
+    BoxLayout:
+        orientation: 'vertical'
+        FileChooserListView:
+            id: file_chooser
+            filters: [dialog.is_dir]
+        BoxLayout:
+            size_hint_y: None
+            height: 32
+            Button:
+                text: 'Cancel'
+                on_release: dialog.on_cancel()
+            Button:
+                text: 'Load'
+                on_release: dialog.on_load(file_chooser.path, file_chooser.selection)
+
 FloatLayout:
     SBView:
         size_hint: 1, 1
