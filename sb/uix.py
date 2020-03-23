@@ -4,9 +4,9 @@ from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
 from os import path
 
-class SelectDirectoryBtn(Button):
+class ChooseDirectoryBtn(Button):
     def on_press(self):
-        pass
+        App.get_running_app().on_choose_directory()
 
 
 class CenterViewBtn(Button):

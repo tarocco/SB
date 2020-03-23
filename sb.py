@@ -1,19 +1,21 @@
-
 import multiprocessing
+import pathlib
+from itertools import islice
+import json
+from argparse import ArgumentParser
+from collections import deque
 
 if __name__ == '__main__':
-    import pathlib
-    from itertools import islice
-    import json
-    from argparse import ArgumentParser
+
     from kivy.app import App
+    from kivy.clock import Clock
     from kivy.uix.image import CoreImage
     from kivy.uix.popup import Popup
+
     from sb import analysis
     from sb.analysis import Analysis
     from sb.files import get_image_paths
     from sb.image_processing import prepare_thumbnails
-    from sb.sbview import SBView
     from sb.sbobject import SBObject
     from sb.image import Image as SBImage
     from sb.sbmetadata import SBMetadata
@@ -22,70 +24,64 @@ if __name__ == '__main__':
 
     from sb.uix import LoadDirectoryDialog
 
+    # Kv imports
+    from sb.sbview import SBView
+    from sb.sbscatter import SBScatter
+    from sb.sbcanvas import SBCanvas
+
     MAX_IMAGES = 3000
 
     class SBApp(App):
         def __init__(self):
             super(SBApp, self).__init__()
-            self.images = []
-            self.coordinates = []
-            self.controller = None
+            self._images_dir_path = None
+            self._thumbnails_dir_path = None
             self._popup = None
+            self.controller = None
 
         def on_start(self):
-            view = self.root.ids.main_view
-            assert(isinstance(view, SBView))
-            scatter = view.scatter
-            sb_canvas = scatter.inner_content
-
+            # Set up controller
+            main_view = self.root.ids.main_view
+            print(main_view.size)
+            sb_canvas = main_view.ids.sb_canvas
             controller = SBController(sb_canvas)
             controller.on_app_start()
             self.controller = controller
-
-            # TODO
-            n_images = len(self.images)
-            objects = [SBObject() for _ in range(n_images)]
-            for o, img in zip(objects, self.images):
-                assert(isinstance(img, CoreImage))
-                sb_img = o.add_component(SBImage)
-                sb_img.texture = img.texture
-                sb_img.transform.width, sb_img.transform.height = \
-                    tuple(0.1 * i for i in img.size)
-
-                sb_md = o.add_component(SBMetadata)
-                sb_md.value = ImageMetadata(thumbnail_file_path=img.filename)
-                sb_canvas.add_root_transform(sb_img.transform)
-
-            # Controller sets all transform positions
-            controller.set_target_anchors(self.coordinates)
-
-            view.size = view.parent.size
-            view.scatter.size = view.size
+            self.load_directory(self._images_dir_path, self._thumbnails_dir_path)
+            #view.size = view.parent.size
 
         def dismiss_popup(self):
             self._popup.dismiss()
             self._popup = None
 
-        def on_load_directory(self, *args):
-            print(*args)
-            #self.load_directory()
+        def on_choose_directory(self):
+            self.open_choose_directory()
+
+        def on_load_directory(self, parent, selection):
+            directory = selection[0]
+            self.load_directory(directory, self._thumbnails_dir_path)
 
         def on_cancel_load_directory(self):
             self.dismiss_popup()
 
-        def open_load_directory(self):
+        def open_choose_directory(self):
             if self._popup:
                 self.dismiss_popup()
             content = LoadDirectoryDialog(
-                on_load=self.on_load_directory,
-                on_cancel=self.on_cancel_load_directory)
+                load=self.on_load_directory,
+                cancel=self.on_cancel_load_directory)
             self._popup = Popup(
                 title='Load directory',
                 content=content,
                 size_hint=(0.9, 0.9)
             )
+            self._popup.open()
 
         def load_directory(self, dir_path, thumbnails_dir_path):
+            self._images_dir_path = dir_path
+            self._thumbnails_dir_path = thumbnails_dir_path
+
+            # Create thumbnail images (cache)
             thumbnails_dir_path = pathlib.Path(thumbnails_dir_path)
             thumbnails_dir_path.mkdir(parents=True, exist_ok=True)
             thumbnails = list(prepare_thumbnails(
@@ -95,6 +91,8 @@ if __name__ == '__main__':
             thumbnail_paths, thumbnail_ios, thumbnail_images = zip(*thumbnails)
 
             analyses = list(map(Analysis.process_image, thumbnail_images))
+
+            # Calculate points
             points = analysis.process_batch_analysis_to_2d(analyses)
             points = 0.8 * points + 0.5
 
@@ -109,11 +107,8 @@ if __name__ == '__main__':
             # Free some memory
             del thumbnail_images
 
-            self.images = imgs
-            self.coordinates = points
-
-        def load_image(self, fp):
-            pass
+            for img, p, a in zip(imgs, points, analyses):
+                self.controller.add_node(img, p, a)
 
         def on_stop(self):
             self.controller.on_app_stop()
@@ -139,7 +134,9 @@ if __name__ == '__main__':
         app = SBApp()
 
         if images_path:
-            app.load_directory(images_path, thumbnails_path)
+            # TODO
+            app._images_dir_path = images_path
+            app._thumbnails_dir_path = thumbnails_path
 
         app.run()
 

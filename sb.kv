@@ -5,9 +5,15 @@
     do_rotation: False
 
 <SBView>:
+    SBScatter:
+        size_hint: (None, None)
+        SBCanvas:
+            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+            size_hint: (0.5, 0.5)
+            id: sb_canvas
 
-<SelectDirectoryBtn>:
-    text: 'select directory'
+<ChooseDirectoryBtn>:
+    text: 'choose directory'
 
 <CenterViewBtn>:
     text: 'center view'
@@ -20,25 +26,28 @@
 
 
 <LoadDirectoryDialog>:
-    id: dialog
     BoxLayout:
+        size: root.size
+        pos: root.pos
         orientation: 'vertical'
         FileChooserListView:
             id: file_chooser
-            filters: [dialog.is_dir]
+            filters: [root.is_dir]
+            dirselect: True
         BoxLayout:
             size_hint_y: None
             height: 32
             Button:
                 text: 'Cancel'
-                on_release: dialog.on_cancel()
+                on_release: root.cancel()
             Button:
                 text: 'Load'
-                on_release: dialog.on_load(file_chooser.path, file_chooser.selection)
+                on_release: root.load(file_chooser.path, file_chooser.selection)
 
 FloatLayout:
     SBView:
-        size_hint: 1, 1
+        size_hint: (None, None)
+        size: self.parent.size
         id: main_view
     AnchorLayout:
         anchor_x: 'center'
@@ -48,7 +57,7 @@ FloatLayout:
             height: 32
             spacing: 20
             Widget:
-            SelectDirectoryBtn:
+            ChooseDirectoryBtn:
                 size_hint: (None, 1.0)
                 width: 120
             Widget:
