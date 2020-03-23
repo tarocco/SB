@@ -27,7 +27,7 @@ class SBController:
         self._update_number_accumulator = 0
 
     def _get_all_anchors(self):
-        xforms = self._sb_canvas._root_object.transform.children
+        xforms = self._sb_canvas.get_root_transforms()
         anchors = [(t.x_anchor, t.y_anchor) for t in xforms]
         return np.array(anchors)
 
@@ -96,7 +96,12 @@ class SBController:
         self._sb_canvas.add_root_transform(_object.transform)
         self._clear_cached_anchors()
 
+    def clear_nodes(self):
+        for xf in self._sb_canvas.get_root_transforms():
+            xf.destroy()
+
     def remove_node(self):
+        print('todo')
         pass
 
     def update(self, dt):

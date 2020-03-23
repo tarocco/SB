@@ -5,6 +5,11 @@ class SBObject:
     def __init__(self):
         self._transform = RectTransform(self)
         self._components = []
+        self._alive = True
+
+    @property
+    def alive(self):
+        return self._alive
 
     @property
     def transform(self):
@@ -31,3 +36,7 @@ class SBObject:
     def update_components(self, dt):
         for component in self._components:
             component.update(dt)
+
+    def destroy(self):
+        # Mark for removal
+        self._alive = False

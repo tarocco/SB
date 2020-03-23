@@ -27,12 +27,18 @@ def prepare_thumbnails(image_paths, thumbnails_path):
             thumbnail_io.seek(0)
         else:
             # Generate thumbnail image
-            img = PILImageM.open(str(image_path))
+            try:
+                img = PILImageM.open(str(image_path))
+            except Exception as ex:
+                print("Warning: could not open file", image_path)
+                print(ex)
+                continue
             assert(isinstance(img, PILImage))
             try:
                 img.thumbnail((64, 64))
             except OSError:
-                print("Warning: could not read file", image_path)
+                print("Warning: could not create thumbnail image for",
+                      image_path)
                 continue
             thumbnail_io = io.BytesIO()
             try:

@@ -12,3 +12,6 @@ cdef class Component:
 
     def update(self, dt):
         pass
+
+    def destroy(self):
+        self._object.remove_component(self)

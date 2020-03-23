@@ -7,20 +7,13 @@ class Image(Drawable):
         super(Image, self).__init__(_object)
         self.texture = kwargs.get('texture', None)
         self.rectangle = Rectangle()
-        self._active_canvases = set()
+        #self._active_canvases = set()
 
     def _add_to_canvas(self, canvas):
-        if not self._is_active_canvas(canvas):
-            canvas.add(self.rectangle)
-            self._active_canvases.add(canvas)
+        canvas.add(self.rectangle)
 
     def _remove_from_canvas(self, canvas):
-        if self._is_active_canvas(canvas):
-            canvas.remove(self.rectangle)
-            self._active_canvases.remove(canvas)
-
-    def _is_active_canvas(self, canvas):
-        return canvas in self._active_canvases
+        canvas.remove(self.rectangle)
 
     def update(self, dt):
         self.rectangle.texture = self.texture

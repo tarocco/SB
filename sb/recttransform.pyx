@@ -39,7 +39,7 @@ cdef class RectTransform(Component):
     cdef public float _x, _y
     cdef public int _x_is_set, _y_is_set
     cdef public list _descendants
-    cdef public int[:] _hierarchy
+    cdef public int[:] _descendant_hierarchy
 
     def __init__(self, _object, *args, **kwargs):
         self._object = _object
@@ -61,7 +61,7 @@ cdef class RectTransform(Component):
         self._model.x_is_set = 0
         self._model.y_is_set = 0
         self._descendants = None
-        self._hierarchy = None
+        self._descendant_hierarchy = None
 
     def _clear_x(self):
         self._model.x_is_set = 0
@@ -85,56 +85,75 @@ cdef class RectTransform(Component):
             yield transform
             transform = transform.parent
 
+    def _clear_ancestor_descendants(self):
+        for xf in self.path():
+            xf._clear_descendants()
+
+    def _clear_descendants(self):
+        self._descendants = None
+        self._descendant_hierarchy = None
+
     @property
     def parent(self):
         return self._parent
 
     @parent.setter
-    def parent(self, value):
-        assert(isinstance(value, RectTransform))
-        assert(value != self)
-        if value is not self._parent:
-            if self._parent is not None:
-                self.parent._children.remove(self)
-                self.parent._descendants = None
-            if value is not None:
-                if self in value.path():  # If value is a descendant of self
-                    if value.parent is not None:
-                        value.parent._children.remove(value)
-                        value.parent._descendants = None
-                    value._parent = self.parent
-                    if self.parent is not None:
-                        self.parent._children.append(value)
-                        self.parent._descendants = None
-                    value._children.append(self)
-                    value._descendants = None
-                    value._clear_xy()
+    def parent(self, new_parent):
+        assert(isinstance(new_parent, RectTransform))
+        assert(new_parent != self)  # Cannot be own parent
+        # If new_parent not (already) parent
+        if new_parent is not self._parent:
+            # If current parent is set
+            if self._parent:
+                # Remove this transform from parent
+                self._parent._children.remove(self)
+                # Clear descendants
+                self._parent._clear_ancestor_descendants()
+            if new_parent is not None:
+                # If new parent is a descendant of this transform,
+                # then rotate the new parent with this transform
+                if self in new_parent.path():
+                    # If the new parent has a parent
+                    if new_parent.parent is not None:
+                        new_parent._parent._children.remove(new_parent)
+                        new_parent._parent._clear_ancestor_descendants()
+                    # Set the new parent's parent to this transform's parent
+                    new_parent._parent = self._parent
+                    # If this transform's parent is not None (not root)
+                    if self._parent is not None:
+                        self._parent._children.append(new_parent)
+                        self._parent._clear_ancestor_descendants()
+                    new_parent._children.append(self)
+                    new_parent._clear_ancestor_descendants()
+                    new_parent._clear_xy()
+                # If new parent is not a descendant of this transform
                 else:
-                    value._children.append(self)
-                    value._descendants = None
+                    new_parent._children.append(self)
+                    new_parent._clear_ancestor_descendants()
                     self._clear_xy()
-            self._parent = value
-            self._descendants = None
+            self._parent = new_parent
 
     @property
     def children(self):
         return [child for child in self._children]
 
+    def _calculate_descendants_and_hierarchy(self):
+        descendants, hierarchy = zip(*get_model_hierarchy(self))
+        self._descendants = list(descendants)
+        self._descendant_hierarchy = np.array(hierarchy, dtype='int')
+
+
     @property
     def descendants(self):
         if self._descendants is None:
-            descendants, hierarchy = zip(*get_model_hierarchy(self))
-            self._descendants = list(descendants)
-            self._hierarchy = np.array(hierarchy, dtype='int')
+            self._calculate_descendants_and_hierarchy()
         return self._descendants
 
     @property
-    def hierarchy(self):
+    def descendant_hierarchy(self):
         if self._descendants is None:
-            descendants, hierarchy = zip(*get_model_hierarchy(self))
-            self._descendants = list(descendants)
-            self._hierarchy = np.array(hierarchy, dtype='int')
-        return self._hierarchy
+            self._calculate_descendants_and_hierarchy()
+        return self._descendant_hierarchy
 
     @property
     def x_delta(self): return self._model.x_delta
@@ -234,12 +253,15 @@ cdef class RectTransform(Component):
         else:
             return self._model.y
 
+    def destroy(self):
+        self._object.destroy()
+
 cdef inline RectTransformModel* get_transform_model_pointer(RectTransform transform):
     return &transform._model
 
 cpdef void transform_model_calc(list transforms, int[:] lut):
     '''
-    :param models: must be a preorder traversal
+    :param transforms: must be a preorder traversal
     '''
 
     cdef RectTransformModel** models
