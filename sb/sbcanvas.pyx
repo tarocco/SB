@@ -42,9 +42,10 @@ class SBCanvas(Widget):
         data = np.empty((len(transforms), 2), dtype='float32')
         transform_model_calc(transforms, lut)
 
-        removal = list()
+
         all_removed = set()
-        removal_parents = set()
+        removal = list()
+        removal_parents = list()
 
         for xf in transforms:
             _object = xf.get_object()
@@ -58,7 +59,7 @@ class SBCanvas(Widget):
                     _object.update_components(dt)
                 else:
                     removal.append(xf)
-                    removal_parents.add(xf.parent)
+                    removal_parents.append(xf.parent)
                     all_removed.add(xf)
                     for drawable in drawables:
                         if drawable in self._active_drawables:
