@@ -10,6 +10,7 @@ ext_options = {
 }
 
 extensions = [
+    Extension("sb.transform_base", sources=["sb/transform_base.pyx"]),
     Extension("sb.recttransform", sources=["sb/recttransform.pyx"]),
     Extension("sb.component", sources=["sb/component.pyx"]),
     "sb/sbobject.pyx",
