@@ -1,6 +1,3 @@
-from collections import deque
-
-from kivy.app import App
 import numpy as np
 import time
 from kivy.clock import Clock

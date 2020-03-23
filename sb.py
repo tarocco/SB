@@ -3,12 +3,10 @@ import pathlib
 from itertools import islice
 import json
 from argparse import ArgumentParser
-from collections import deque
 
 if __name__ == '__main__':
 
     from kivy.app import App
-    from kivy.clock import Clock
     from kivy.uix.image import CoreImage
     from kivy.uix.popup import Popup
 
@@ -16,11 +14,8 @@ if __name__ == '__main__':
     from sb.analysis import Analysis
     from sb.files import get_image_paths
     from sb.image_processing import prepare_thumbnails
-    from sb.sbobject import SBObject
-    from sb.image import Image as SBImage
     from sb.sbmetadata import SBMetadata
     from sb.sbcontroller import SBController
-    from sb.image_metadata import ImageMetadata
 
     from sb.uix import LoadDirectoryDialog
 
@@ -48,7 +43,6 @@ if __name__ == '__main__':
             controller.on_app_start()
             self.controller = controller
             self.load_directory(self._images_dir_path, self._thumbnails_dir_path)
-            #view.size = view.parent.size
 
         def dismiss_popup(self):
             self._popup.dismiss()
