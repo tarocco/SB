@@ -3,6 +3,7 @@ from sb.recttransform import RectTransform
 
 class SBObject:
     def __init__(self):
+        # TODO: different transform types?
         self._transform = RectTransform(self)
         self._components = []
         self._alive = True

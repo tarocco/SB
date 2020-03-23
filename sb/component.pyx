@@ -1,7 +1,9 @@
 cdef class Component:
-    def __init__(self, _object):
+    def __init__(self, _object, transform=None):
         self._object = _object
-        self._transform = _object.transform
+        if not transform:
+            transform = _object.transform
+        self._transform = transform
 
     @property
     def transform(self):

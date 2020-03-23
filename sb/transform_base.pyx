@@ -14,8 +14,7 @@ def get_model_hierarchy(transform, index=0, parent_index=-1):
 
 cdef class TransformBase(Component):
     def __init__(self, _object):
-        self._object = _object
-        self._transform = self
+        super(TransformBase, self).__init__(_object, self)
         self._parent = None
         self._children = []
         self._descendants = None
