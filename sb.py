@@ -1,8 +1,6 @@
 
 import multiprocessing
 
-from kivy.uix.popup import Popup
-
 if __name__ == '__main__':
     import pathlib
     from itertools import islice
@@ -10,6 +8,7 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
     from kivy.app import App
     from kivy.uix.image import CoreImage
+    from kivy.uix.popup import Popup
     from sb import analysis
     from sb.analysis import Analysis
     from sb.files import get_image_paths
@@ -20,6 +19,7 @@ if __name__ == '__main__':
     from sb.sbmetadata import SBMetadata
     from sb.sbcontroller import SBController
     from sb.image_metadata import ImageMetadata
+
     from sb.uix import LoadDirectoryDialog
 
     MAX_IMAGES = 3000
