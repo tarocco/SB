@@ -20,7 +20,7 @@ class Analysis:
 
 
 def get_basic_analysis(array):
-    flat = array.flat
+    flat = array.flatten()
     mean = np.sum(flat) / flat.size
     contrast = np.sum(np.abs(flat - mean)) / flat.size
     return Analysis(mean, contrast)

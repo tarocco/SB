@@ -4,8 +4,8 @@ from math import exp, log
 from .math import soft_minimum
 from multiprocessing import Process, Value, Array
 from ctypes import Structure, c_long, c_float
-from sb.utilities import spin
-
+from sb.utilities import spin, acquire_timeout
+from copy import copy
 
 class Vector2(Structure):
     _fields_ = [('x', c_float), ('y', c_float)]
@@ -14,7 +14,7 @@ class Vector2(Structure):
         yield from (self.x, self.y)
 
 def delaunay_relax_points(
-        indices, points, points_out, neighbor_divs, neighbors,
+        indices, points, points_relaxed, neighbor_divs, neighbors,
         alpha, beta):
 
     def get_neighbors(point_index):
@@ -35,69 +35,84 @@ def delaunay_relax_points(
             #s = min(0, s)
             n = n / (n_norm + 0.0001)
             delta = delta + alpha * s * n
-        points_out[idx] = tuple(p + delta)
+        points_relaxed[idx] = tuple(p + delta)
 
 def delaunay_loop(
         n_relax_procs,
-        points_write_var,
+        points_io,
+        points_io_var,
         cancellation,
         relax_var,
         relax_completed_var,
         n_points,
         points,
-        points_out,
+        points_relaxed,
         neighbor_divs,
         neighbors):
     while True:
         with cancellation.get_lock():
             if cancellation.value:
                 return
-        # Wait for relaxation workers
+
+        # Wait for all relaxation workers to complete
+        skip = False
         with relax_completed_var.get_lock():
-            if relax_completed_var.value == 0:
-                # Notify work complete
-                with points_write_var.get_lock():
-                    points_write_var.value = 0
-                    if not n_points:
-                        continue
-                    # Copy relaxed points back to main list
-                    for idx in range(n_points.value):
-                        points[idx] = points_out[idx]
+            skip = relax_completed_var.value > 0
+            if not skip:
+                if not n_points.value:
+                    skip = True
+                else:
+                    with points_io.get_lock():
+                        # TODO: can this be optimized?
+                        if points_io_var.value:  # Write in
+                            for idx in range(n_points.value):
+                                points[idx] = points_io[idx]
+                            points_io_var.value = 0
+                        else:
+                            for idx in range(n_points.value):
+                                r = points_relaxed[idx]
+                                points[idx] = r
+                                points_io[idx] = r
 
-                # Pause...
-                spin(200)
 
-                with points_write_var.get_lock():
-                    points_write_var.value = 1
-                    # Get np view from points array
-                    array = np.frombuffer(
-                        points.get_obj(),
-                        dtype=Vector2,
-                        count=n_points.value).view('<f4').reshape(-1, 2)
-                    # Calculate Delaunay
-                    delaunay = Delaunay(array)
-                    # Copy neighbor data into lists
-                    nds, ns = delaunay.vertex_neighbor_vertices
-                    for i, nd in enumerate(nds):
-                        neighbor_divs[i] = nd
-                    for i, n in enumerate(ns):
-                        neighbors[i] = n
-                    # Set relax counter
-                    relax_var.value = n_relax_procs
-                    relax_completed_var.value = n_relax_procs
-            else:
-                spin(1000000)
+        if skip:
+            continue
 
+        # Calculate Delaunay
+        with relax_completed_var.get_lock():
+            # Get np view from points array
+            array = np.frombuffer(
+                points,
+                dtype=Vector2,
+                count=n_points.value).view('<f4').reshape(-1, 2)
+
+            try:
+                delaunay = Delaunay(array)
+            except Exception as ex:
+                continue
+
+            # Copy neighbor data into lists
+            nds, ns = delaunay.vertex_neighbor_vertices
+            for i, nd in enumerate(nds):
+                neighbor_divs[i] = nd
+            for i, n in enumerate(ns):
+                neighbors[i] = n
+            # Set relax counter
+
+            relax_var.value = n_relax_procs
+            relax_completed_var.value = n_relax_procs
 
 def relax_points_loop(
         offset,
         stride,
+        alpha,
+        beta,
         cancellation,
         relax_var,
         relax_completed_var,
         n_points,
         points,
-        points_out,
+        points_relaxed,
         neighbor_divs,
         neighbors):
     while True:
@@ -105,69 +120,85 @@ def relax_points_loop(
             if cancellation.value:
                 return
         # Wait for Delaunay worker
+        skip = False
         with relax_var.get_lock():
             if relax_var.value > 0:
                 relax_var.value = relax_var.value - 1
             else:
-                spin(200)
-                continue
+                skip = True
+        if skip:
+            continue
+
         points_indices = range(offset, n_points.value, stride)
+
+        with alpha.get_lock():
+            _alpha = alpha.value
+        with beta.get_lock():
+            _beta = beta.value
+
         delaunay_relax_points(
-            points_indices, points, points_out, neighbor_divs, neighbors,
-            0.1, 0.04)
-        #with points_out.get_lock():
-        #    for idx, p in zip(points_indices, relaxed):
-        #        points_out[idx] = tuple(p)
+            points_indices, points, points_relaxed, neighbor_divs,
+            neighbors, _alpha, _beta)
+
         with relax_completed_var.get_lock():
             relax_completed_var.value = relax_completed_var.value - 1
 
 
 class PointRelaxer():
     def __init__(self):
-        self.n_relaxation_workers = 4
+        self.n_relaxation_workers = 8
         # self.points_array = None
         # self.work_array = None
         self.cancellation = Value('i', 0, lock=True)
         self.relax_var = Value('i', 0, lock=True)
         self.relax_completed_var = Value('i', 0, lock=True)
-        self.points_write_var = Value('i', 0, lock=True)
         self.n_points = Value('i', 0, lock=False)
+        self.points_io_var = Value('i', 0, lock=False)
 
         self._buffer_size = None
         self.neighors_array_buffer_multiplier = 4
 
         self.points = None
-        self.points_out = None
+        self.points_relaxed = None
+        self.points_io = None
         self.neighbor_divs = None
         self.neighbors = None
 
         self.delaunay_process = None
         self.relax_processes = []
 
+        self.alpha = Value('f', 0.1, lock=True)
+        self.beta = Value('f', 0.04, lock=True)
+
     def init_processes(self, buffer_size):
         self._buffer_size = buffer_size
         if self.points:
             del self.points
-        if self.points_out:
-            del self.points_out
+        if self.points_relaxed:
+            del self.points_relaxed
+        if self.points_io:
+            del self.points_io
         if self.neighbor_divs:
             del self.neighbor_divs
         if self.neighbors:
             del self.neighbors
 
         n_neighbors = self.neighors_array_buffer_multiplier * buffer_size
-        self.points = Array(Vector2, buffer_size, lock=True)
+        self.points = Array(Vector2, buffer_size, lock=False)
+        self.points_relaxed = Array(Vector2, buffer_size, lock=False)
+        self.points_io = Array(Vector2, buffer_size, lock=True)
         self.neighbor_divs = Array(c_long, buffer_size + 1, lock=False)
         self.neighbors = Array(c_long, n_neighbors, lock=False)
-        self.points_out = Array(Vector2, buffer_size, lock=True)
+
 
         args_common = (self.cancellation, self.relax_var,
                        self.relax_completed_var, self.n_points,
-                       self.points, self.points_out,
+                       self.points, self.points_relaxed,
                        self.neighbor_divs, self.neighbors)
-        d_args = (self.n_relaxation_workers,
-                  self.points_write_var) + args_common
-        r_args_suffix = (self.n_relaxation_workers,) + args_common
+        d_args = (self.n_relaxation_workers, self.points_io,
+                  self.points_io_var) + args_common
+        r_args_suffix = (self.n_relaxation_workers, self.alpha, self.beta) + \
+                        args_common
 
         self.delaunay_process = Process(target=delaunay_loop, args=d_args)
         self.relax_processes = [
@@ -175,22 +206,21 @@ class PointRelaxer():
             for i in range(self.n_relaxation_workers)]
 
     def set_points(self, points):
-        while True:
-            with self.points_write_var.get_lock():
-                if self.points_write_var.value == 0:
-                    n_points = len(points)
-                    for idx in range(n_points):
-                        p = points[idx]
-                        self.points[idx] = tuple(p)
-                        self.points_out[idx] = tuple(p)
-                    self.n_points.value = n_points
-                    return
-            spin(1000)
-            continue
+        with self.points_io.get_lock():
+            n_points = len(points)
+            for idx in range(n_points):
+                p = points[idx]
+                # Dithering prevents issues with Delaunay calculation
+                r = 0.00001 * np.random.rand(2)
+                p = (p[0] + r[0], p[1] + r[1])
+                self.points_io[idx] = tuple(p)
+            self.n_points.value = n_points
+            self.points_io_var.value = 1
 
     def get_points(self):
-        with self.points.get_lock():
-            return [tuple(self.points[i]) for i in range(self.n_points.value)]
+        with self.points_io.get_lock():
+            return [tuple(self.points[i]) for i in
+                    range(self.n_points.value)]
 
     def start_all(self):
         self.delaunay_process.start()

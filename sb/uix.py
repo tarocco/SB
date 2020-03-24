@@ -1,18 +1,19 @@
 import json
 import pathlib
-from itertools import islice
 from os import path
+from queue import Empty
+
+import numpy as np
 
 from kivy.properties import ObjectProperty
 from kivy.uix.floatlayout import FloatLayout
 
-from kivy.uix.image import CoreImage
+from kivy.core.image import Texture
 from kivy.uix.popup import Popup
 
 from kivy.clock import Clock
 
 from sb import analysis
-from sb.analysis import Analysis
 from sb.files import get_image_paths
 from sb.image_metadata import ImageMetadata
 from sb.image import Image as SBImage
@@ -20,7 +21,14 @@ from sb.image_processing import ImageProcessor
 from sb.sbmetadata import SBMetadata
 from sb.sbcontroller import SBController
 
+
 MAX_IMAGES = 3000
+
+def get_texture_from_array(array):
+    h, w, _ = array.shape
+    texture = Texture.create(size=(w, h))
+    texture.blit_buffer(np.flip(array, 0).flatten(), colorfmt='rgb', bufferfmt='float')
+    return texture
 
 
 class LoadDirectoryDialog(FloatLayout):
@@ -39,48 +47,75 @@ class RootView(FloatLayout):
         self.images_dir_path = None
         self.thumbnails_dir_path = None
         self.image_processor = None
-        self.nodes = []
+        self.nodes = {}
+        self.update_batch_size = 400
 
     def on_start(self):
         # Set up controller
         sb_view = self.ids.sb_view
         sb_canvas = sb_view.ids.sb_canvas
         controller = SBController(sb_canvas)
+        controller.pr_alpha = 0.0
+        controller.pr_beta = 0.04
         controller.on_app_start()
         self.controller = controller
-        Clock.schedule_interval(self.update, 1 / 60)
+        Clock.schedule_interval(self.image_loader_update, 1 / 60)
 
-    def image_load_update(self, dt):
+    def image_loader_update(self, dt):
         if self.image_processor:
             assert(isinstance(self.image_processor, ImageProcessor))
-            for index, img_array in self.image_processor.img_array_queue:
-                node = self.nodes[index]
-
+            for _ in range(self.update_batch_size):
+                try:
+                    node_id, img_array = self.image_processor.img_array_queue.get_nowait()
+                except Empty:
+                    break
+                node = self.nodes[node_id]
+                self.controller.pr_alpha = 0.0
                 # Add image component
                 sb_img = node.add_component(SBImage)
 
                 # TODO
-                #sb_img.texture = img.texture
-                #sb_img.transform.width, sb_img.transform.height = \
-                #    tuple(0.1 * i for i in img.size)
-            for index, analysis in self.image_processor.analysis_queue:
-                node = self.nodes[index]
-                md = node.get_component(ImageMetadata)
-                # TODO: set target anchors
+                texture = get_texture_from_array(img_array)
+                sb_img.texture = texture
+                sb_img.transform.width, sb_img.transform.height = \
+                    tuple(0.1 * i for i in texture.size)
+
+            node_ids = []
+            anchors = []
+
+            for _ in range(self.update_batch_size):
+                try:
+                    node_id, analysis = self.image_processor.analysis_queue.get_nowait()
+                except Empty:
+                    break
+                node = self.nodes[node_id]
+                md = node.add_component(ImageMetadata)
                 md.analysis = analysis
+                anchor = (analysis.mean, analysis.contrast)
+                node_ids.append(node_id)
+                anchors.append(anchor)
+            if node_ids:
+                self.controller.set_node_target_anchors(node_ids, anchors)
 
-            for index, ea in self.image_processor.extended_analysis_queue:
-                node = self.nodes[index]
-                md = node.get_component(ImageMetadata)
-                md.analysis = ea
+            node_ids = []
+            anchors = []
+            if self.image_processor.results_queue.empty():
+                self.controller.pr_alpha = 0.2
 
-            for index, result in self.image_processor.results_queue:
-                node = self.nodes[index]
-                # TODO: set target anchors
-
+            for _ in range(self.update_batch_size):
+                try:
+                    node_id, result = self.image_processor.results_queue.get_nowait()
+                except Empty:
+                    break
+                anchor = result
+                node_ids.append(node_id)
+                anchors.append(anchor)
+            if node_ids:
+                self.controller.set_node_target_anchors(node_ids, anchors)
 
     def on_stop(self):
         self.controller.on_app_stop()
+        self.image_processor.stop_all()
 
     def dismiss_popup(self):
         self.popup.dismiss()
@@ -109,9 +144,7 @@ class RootView(FloatLayout):
     def load_directory(self, dir_path, thumbnails_dir_path=None):
         if self.image_processor:
             self.image_processor.stop_all()
-        image_processor = ImageProcessor()
-        image_processor.init_processes()
-        self.image_processor = image_processor
+
         self.images_dir_path = dir_path
         if thumbnails_dir_path:
             self.thumbnails_dir_path = thumbnails_dir_path
@@ -119,45 +152,22 @@ class RootView(FloatLayout):
             thumbnails_dir_path = self.thumbnails_dir_path
 
         thumbnails_dir_path = pathlib.Path(thumbnails_dir_path)
+        image_processor = ImageProcessor()
+        image_processor.init_processes(str(thumbnails_dir_path), n_workers=8)
+        self.image_processor = image_processor
+
         thumbnails_dir_path.mkdir(parents=True, exist_ok=True)
-        file_paths = get_image_paths(dir_path)
+        file_paths = list(get_image_paths(dir_path))
 
-        self.nodes = [self.controller.add_node()
-                      for _ in range(len(file_paths))]
+        nodes = [self.controller.add_node() for _ in range(len(file_paths))]
 
-        for node, file_path in zip(self.nodes, file_paths):
+        self.nodes = {id(n): n for n in nodes}
+
+        for node, file_path in zip(nodes, file_paths):
             sb_md = node.add_component(SBMetadata)
             sb_md.value = ImageMetadata(thumbnail_file_path=file_path)
 
-        image_processor.start_all(file_paths)
-
-        """
-
-        thumbnail_paths, thumbnail_ios, thumbnail_images = zip(*thumbnails)
-
-        analyses = list(map(Analysis.process_image, thumbnail_images))
-
-        # Calculate points
-        points = analysis.process_batch_analysis_to_2d(analyses)
-        points = 0.8 * points + 0.5
-
-        # Reset stream positions after generating analyses (PIL affects it)
-        for thumb_io in thumbnail_ios:
-            thumb_io.seek(0)
-
-        imgs = [CoreImage(thumb_io, ext='png', filename=str(thumb_path))
-                for thumb_io, thumb_path in
-                zip(thumbnail_ios, thumbnail_paths)]
-
-        # Free some memory
-        del thumbnail_images
-
-        # Clear controller nodes
-        self.controller.clear_nodes()
-        # Add nodes to controller
-        for img, p, a in zip(imgs, points, analyses):
-            self.controller.add_node(img, p, a)
-        """
+        image_processor.start_all(list(zip(self.nodes.keys(), file_paths)))
 
     def export_1d(self):
         transforms = self.controller.get_root_transforms()
