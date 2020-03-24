@@ -26,6 +26,11 @@ if __name__ == '__main__':
                 self.initial_thumbnails_dir_path
             )
 
+        def on_stop(self):
+            root_view = self.root()
+            assert (isinstance(root_view, RootView))
+            root_view.on_stop()
+
 
     def main():
         parser = ArgumentParser()

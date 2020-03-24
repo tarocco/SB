@@ -46,9 +46,6 @@ class SBController:
         self._target_anchors = None
         self._prior_anchors = None
 
-    def get_root_transforms(self):
-        return self._sb_canvas.get_root_transforms()
-
     def set_target_anchors(self, anchors):
         anchors = np.array(anchors)
         self._target_anchors = anchors
@@ -70,31 +67,17 @@ class SBController:
     def on_app_stop(self):
         self._point_relaxer.stop_all()
 
-    def add_node(self, img, point, analysis):
+    def add_node(self):
         assert(isinstance(self._sb_canvas, SBCanvas))
 
         # Create object
         _object = SBObject()
-        sb_img = _object.add_component(SBImage)
-
-        # Add image component
-        sb_img.texture = img.texture
-        sb_img.transform.width, sb_img.transform.height = \
-            tuple(0.1 * i for i in img.size)
-
-        # Add metadata component
-        sb_md = _object.add_component(SBMetadata)
-        sb_md.value = ImageMetadata(
-            thumbnail_file_path=img.filename,
-            analysis=analysis
-        )
-
-        # Set transform anchor
-        _object.transform.x_anchor = point[0]
-        _object.transform.y_anchor = point[1]
-
         self._sb_canvas.add_root_transform(_object.transform)
         self._clear_cached_anchors()
+        return _object
+
+    def get_node_by_index(self, index):
+        return self._sb_canvas.get_root_transforms()[index]
 
     def clear_nodes(self):
         for xf in self._sb_canvas.get_root_transforms():
@@ -117,7 +100,7 @@ class SBController:
         self._update_anchors_accumulator += time.process_time() - begin_t
 
         xform_t = time.process_time()
-        xforms = self.get_root_transforms()
+        xforms = self._sb_canvas.get_root_transforms()
         anchors = self._prior_anchors
         self._set_transform_anchors(xforms, anchors)
         self._update_transforms_accumulator += time.process_time() - xform_t

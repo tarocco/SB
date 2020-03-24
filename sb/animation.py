@@ -4,7 +4,7 @@ from math import exp, log
 from .math import soft_minimum
 from multiprocessing import Process, Value, Array
 from ctypes import Structure, c_long, c_float
-import time
+from sb.utilities import spin
 
 
 class Vector2(Structure):
@@ -12,13 +12,6 @@ class Vector2(Structure):
 
     def __iter__(self):
         yield from (self.x, self.y)
-
-
-def spin(cycles):
-    end = time.clock()
-    while time.clock() < end:
-        continue
-
 
 def delaunay_relax_points(
         indices, points, points_out, neighbor_divs, neighbors,
@@ -215,4 +208,3 @@ class PointRelaxer():
 
         with self.cancellation.get_lock():
             self.cancellation.value = 0
-

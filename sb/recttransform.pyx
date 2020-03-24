@@ -190,40 +190,41 @@ cpdef void transform_model_calc(list transforms, int[:] lut):
     for i in range(n_models):
         models[i] = get_transform_model_pointer(transforms[i])
 
-    for i in prange(n_models, nogil=True):
-        model = models[i]
-        parent_idx = lut[i]
-        if parent_idx >= 0:
-            parent = models[parent_idx]
-            model.x = calculate_dimension(
-                parent.x,
-                parent.width,
-                model.x_anchor,
-                model.x_pivot,
-                model.width,
-                model.x_delta)
-            model.y = calculate_dimension(
-                parent.y,
-                parent.height,
-                model.y_anchor,
-                model.y_pivot,
-                model.width,
-                model.y_delta)
-        else:
-            model.x = calculate_dimension(
-                0,
-                0,
-                model.x_anchor,
-                model.x_pivot,
-                model.width,
-                model.x_delta)
-            model.y = calculate_dimension(
-                0,
-                0,
-                model.y_anchor,
-                model.y_pivot,
-                model.width,
-                model.y_delta)
-        model.x_is_set = 1
-        model.y_is_set = 1
+    with nogil:
+        for i in range(n_models):
+            model = models[i]
+            parent_idx = lut[i]
+            if parent_idx >= 0:
+                parent = models[parent_idx]
+                model.x = calculate_dimension(
+                    parent.x,
+                    parent.width,
+                    model.x_anchor,
+                    model.x_pivot,
+                    model.width,
+                    model.x_delta)
+                model.y = calculate_dimension(
+                    parent.y,
+                    parent.height,
+                    model.y_anchor,
+                    model.y_pivot,
+                    model.width,
+                    model.y_delta)
+            else:
+                model.x = calculate_dimension(
+                    0,
+                    0,
+                    model.x_anchor,
+                    model.x_pivot,
+                    model.width,
+                    model.x_delta)
+                model.y = calculate_dimension(
+                    0,
+                    0,
+                    model.y_anchor,
+                    model.y_pivot,
+                    model.width,
+                    model.y_delta)
+            model.x_is_set = 1
+            model.y_is_set = 1
     free(models)
